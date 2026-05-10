@@ -1,0 +1,156 @@
+# docker-compose.yml — Backend Innovatech Chile
+# Orquesta: Ventas (8080) + Despachos (8081) + MySQL
+#
+# Uso:
+#   cp .env.example .env && nano .env    (rellenar valores)
+#   docker compose up -d --build
+#   docker compose logs -f
+#   docker compose ps
+version: '3.8'
+
+services:
+  # ─────────────────────────────────────────────────────
+  # Base de datos MySQL compartida
+  # Crea automáticamente ventas_db y despachos_db
+  # ─────────────────────────────────────────────────────
+  mysql:
+    image: mysql:8.0
+    container_name: innovatech-mysql
+
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_USER:          ${DB_USERNAME}
+      MYSQL_PASSWORD:      ${DB_PASSWORD}
+      # Crea la primera DB automáticamente; la segunda la crea init.sql
+      MYSQL_DATABASE:      ${DB_NAME_VENTAS}
+
+    # Puerto NO expuesto al host intencionalmente (seguridad)
+    # Solo accesible dentro de la red interna backend-network
+    expose:
+      - "3306"
+
+    networks:
+      - backend-network
+
+    # NAMED VOLUME para persistencia de datos
+    # Los datos sobreviven a reinicios y reconstrucciones del contenedor
+    volumes:
+      - mysql-data:/var/lib/mysql
+      # Script de inicialización: crea la DB de despachos
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+
+    # Health check: MySQL lista para aceptar conexiones
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost",
+             "-u", "${DB_USERNAME}", "-p${DB_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+    restart: unless-stopped
+
+  # ─────────────────────────────────────────────────────
+  # Servicio Ventas — Spring Boot en puerto 8080
+  # API REST: /api/v1/ventas
+  # ─────────────────────────────────────────────────────
+  ventas:
+    build:
+      context: ./Springboot-API-REST
+      dockerfile: Dockerfile
+      target: runner
+
+    image: ${DOCKERHUB_USERNAME:-innovatech}/backend-ventas:latest
+    container_name: innovatech-ventas
+
+    ports:
+      - "8080:8080"
+
+    environment:
+      # Variables que consumen application.properties
+      DB_ENDPOINT: mysql           # nombre del servicio en docker-compose
+      DB_PORT:     3306
+      DB_NAME:     ${DB_NAME_VENTAS}
+      DB_USERNAME: ${DB_USERNAME}
+      DB_PASSWORD: ${DB_PASSWORD}
+      # Perfil de Spring Boot
+      SPRING_PROFILES_ACTIVE: prod
+
+    env_file:
+      - .env
+
+    depends_on:
+      mysql:
+        condition: service_healthy   # Espera que MySQL esté lista
+
+    networks:
+      - backend-network
+
+    volumes:
+      - ventas-logs:/app/logs
+
+    restart: unless-stopped
+
+  # ─────────────────────────────────────────────────────
+  # Servicio Despachos — Spring Boot en puerto 8081
+  # API REST: /api/v1/despachos
+  # ─────────────────────────────────────────────────────
+  despachos:
+    build:
+      context: ./Springboot-API-REST-DESPACHO
+      dockerfile: Dockerfile
+      target: runner
+
+    image: ${DOCKERHUB_USERNAME:-innovatech}/backend-despachos:latest
+    container_name: innovatech-despachos
+
+    ports:
+      - "8081:8081"
+
+    environment:
+      DB_ENDPOINT: mysql
+      DB_PORT:     3306
+      DB_NAME:     ${DB_NAME_DESPACHOS}
+      DB_USERNAME: ${DB_USERNAME}
+      DB_PASSWORD: ${DB_PASSWORD}
+      SPRING_PROFILES_ACTIVE: prod
+
+    env_file:
+      - .env
+
+    depends_on:
+      mysql:
+        condition: service_healthy
+      ventas:
+        condition: service_started   # Despachos depende de que Ventas esté arriba
+
+    networks:
+      - backend-network
+
+    volumes:
+      - despachos-logs:/app/logs
+
+    restart: unless-stopped
+
+# ─────────────────────────────────────────────────────────────────
+# RED INTERNA
+# Todos los servicios se comunican por nombre dentro de esta red
+# MySQL NO tiene puerto mapeado al host → solo accesible internamente
+# ─────────────────────────────────────────────────────────────────
+networks:
+  backend-network:
+    driver: bridge
+
+# ─────────────────────────────────────────────────────────────────
+# VOLÚMENES NOMBRADOS (Named Volumes)
+# Docker gestiona la ubicación en /var/lib/docker/volumes/
+# Ventaja sobre bind mount: más portable, mejor para producción EC2
+# mysql-data: CRÍTICO — contiene todas las tablas y registros
+# ─────────────────────────────────────────────────────────────────
+volumes:
+  mysql-data:
+    driver: local
+  ventas-logs:
+    driver: local
+  despachos-logs:
+    driver: local
