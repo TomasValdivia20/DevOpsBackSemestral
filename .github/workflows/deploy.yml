@@ -32,9 +32,7 @@ jobs:
       - name: Build & Push Ventas
         uses: docker/build-push-action@v5
         with:
-          # CONTEXTO: Entramos hasta la carpeta donde está el pom.xml
           context: ./back-Ventas_SpringBoot/Springboot-API-REST
-          # FILE: El Dockerfile está en esa misma carpeta
           file: ./back-Ventas_SpringBoot/Springboot-API-REST/Dockerfile
           push: true
           tags: tomasvaldivia20/backend-ventas:latest
@@ -63,15 +61,12 @@ jobs:
       - name: Build & Push Despachos
         uses: docker/build-push-action@v5
         with:
-          # CONTEXTO: Entramos hasta la carpeta donde está el pom.xml
           context: ./back-Despachos_SpringBoot/Springboot-API-REST-DESPACHO
-          # FILE: El Dockerfile está en esa misma carpeta
           file: ./back-Despachos_SpringBoot/Springboot-API-REST-DESPACHO/Dockerfile
           push: true
           tags: tomasvaldivia20/backend-despachos:latest
           cache-from: type=gha,scope=despachos
           cache-to: type=gha,mode=max,scope=despachos
-
 
   # ─────────────────────────────────────────────────────────────────────
   # JOB 2: Deploy en EC2 Backend (SSH Proxy)
@@ -90,13 +85,11 @@ jobs:
           host: ${{ secrets.EC2_BACKEND_HOST }}
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_SSH_KEY }}
-          # Configuración del salto vía Frontend
           proxy_host: ${{ secrets.EC2_FRONTEND_HOST }}   
           proxy_username: ${{ secrets.EC2_USER }}        
           proxy_key: ${{ secrets.EC2_SSH_KEY }}         
           source: "docker-compose.yml,init.sql,.env.example"
           target: "/home/ubuntu/backend"
-          # Agregamos timeout por si el salto es lento
           timeout: 60s
 
       - name: Deploy en EC2 vía SSH
@@ -121,7 +114,6 @@ jobs:
             set -e
             
             echo "--- Preparando directorio de trabajo ---"
-            # Usamos sudo solo para asegurar la creación, luego damos permisos al usuario ubuntu
             sudo mkdir -p /home/ubuntu/backend
             sudo chown -R ubuntu:ubuntu /home/ubuntu/backend
             cd /home/ubuntu/backend
@@ -139,12 +131,13 @@ jobs:
             DOCKERHUB_USERNAME=tomasvaldivia20
             ENVEOF
 
-            echo "--- Actualizando imágenes y reiniciando servicios ---"
+            echo "--- Actualizando imágenes ---"
             docker pull $IMAGE_VENTAS:latest
             docker pull $IMAGE_DESPACHOS:latest
             
-            # --no-deps asegura que MySQL no se reinicie si ya está arriba
-            docker compose up -d --no-deps ventas despachos
+            echo "--- Reiniciando servicios con Docker Compose ---"
+            # CAMBIO CLAVE: Se usa docker-compose con guion para evitar error de flag -d
+            docker-compose up -d --no-deps ventas despachos
             
             docker image prune -f
             echo "--- ¡Despliegue de Backend completado exitosamente! ---"
