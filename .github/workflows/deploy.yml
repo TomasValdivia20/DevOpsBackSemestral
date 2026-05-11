@@ -59,7 +59,7 @@ jobs:
         with:
           username: tomasvaldivia20
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-          
+
       - name: Build & Push Despachos
         uses: docker/build-push-action@v5
         with:
@@ -73,7 +73,7 @@ jobs:
           cache-to: type=gha,mode=max,scope=despachos
 
 
-  # ─────────────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────
   # JOB 2: Deploy en EC2 Backend (SSH Proxy)
   # ─────────────────────────────────────────────────────────────────────
   deploy:
@@ -84,12 +84,13 @@ jobs:
       - name: Checkout (archivos de config)
         uses: actions/checkout@v4
 
-      - name: Copiar archivos al EC2
-        uses: appleboy/scp-action@v0.1.4
+      - name: Copiar archivos al EC2 (SCP)
+        uses: appleboy/scp-action@v0.1.7 # Actualizado a la última estable
         with:
           host: ${{ secrets.EC2_BACKEND_HOST }}
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_SSH_KEY }}
+          # IMPORTANTE: Revisa que estos nombres existan en tus GitHub Secrets
           proxy_host: ${{ secrets.EC2_FRONTEND_HOST }}   
           proxy_username: ${{ secrets.EC2_USER }}        
           proxy_key: ${{ secrets.EC2_SSH_KEY }}         
@@ -116,12 +117,13 @@ jobs:
           envs: DOCKERHUB_TOKEN,MYSQL_ROOT_PASSWORD,DB_USERNAME,DB_PASSWORD,IMAGE_VENTAS,IMAGE_DESPACHOS
           script: |
             set -e
+            mkdir -p /home/ubuntu/backend
             cd /home/ubuntu/backend
 
             echo "--- Login Docker Hub ---"
             echo "$DOCKERHUB_TOKEN" | docker login -u tomasvaldivia20 --password-stdin
 
-            echo "--- Creando archivo .env actualizado ---"
+            echo "--- Creando .env ---"
             cat > .env << ENVEOF
             MYSQL_ROOT_PASSWORD=$MYSQL_ROOT_PASSWORD
             DB_USERNAME=$DB_USERNAME
@@ -131,13 +133,9 @@ jobs:
             DOCKERHUB_USERNAME=tomasvaldivia20
             ENVEOF
 
-            echo "--- Descargando imágenes nuevas ---"
+            echo "--- Pull y Restart ---"
             docker pull $IMAGE_VENTAS:latest
             docker pull $IMAGE_DESPACHOS:latest
-
-            echo "--- Reiniciando stack con Docker Compose ---"
-            # Actualizamos solo los servicios Java sin tocar la base de datos
             docker compose up -d --no-deps ventas despachos
-
             docker image prune -f
-            echo "--- Despliegue de Backend completado exitosamente ---"
+            echo "--- ¡Backend arriba! ---"
