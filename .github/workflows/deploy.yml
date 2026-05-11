@@ -29,23 +29,15 @@ jobs:
           username: tomasvaldivia20
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Metadata Ventas
-        id: meta-ventas
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.IMAGE_VENTAS }}
-          tags: |
-            type=raw,value=latest
-            type=sha,prefix=sha-
-
       - name: Build & Push Ventas
         uses: docker/build-push-action@v5
         with:
-          context: . # Volvemos a la raíz para que vea TODO
-          file: ./back-Ventas_SpringBoot/Springboot-API-REST/Dockerfile # Pasamos la ruta de la subcarpeta como argumento si el Dockerfile lo requiere# o simplemente dejamos que el file: maneje la lógica.
+          # CONTEXTO: Entramos hasta la carpeta donde está el pom.xml
+          context: ./back-Ventas_SpringBoot/Springboot-API-REST
+          # FILE: El Dockerfile está en esa misma carpeta
+          file: ./back-Ventas_SpringBoot/Springboot-API-REST/Dockerfile
           push: true
-          tags: ${{ steps.meta-ventas.outputs.tags }}
-          labels: ${{ steps.meta-ventas.outputs.labels }}
+          tags: tomasvaldivia20/backend-ventas:latest
           cache-from: type=gha,scope=ventas
           cache-to: type=gha,mode=max,scope=ventas
 
@@ -67,27 +59,19 @@ jobs:
         with:
           username: tomasvaldivia20
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      - name: Metadata Despachos
-        id: meta-despachos
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.IMAGE_DESPACHOS }}
-          tags: |
-            type=raw,value=latest
-            type=sha,prefix=sha-
-
+          
       - name: Build & Push Despachos
         uses: docker/build-push-action@v5
         with:
-          context: .
-          # RUTA CORREGIDA: Carpeta padre + Subcarpeta
+          # CONTEXTO: Entramos hasta la carpeta donde está el pom.xml
+          context: ./back-Despachos_SpringBoot/Springboot-API-REST-DESPACHO
+          # FILE: El Dockerfile está en esa misma carpeta
           file: ./back-Despachos_SpringBoot/Springboot-API-REST-DESPACHO/Dockerfile
           push: true
-          tags: ${{ steps.meta-despachos.outputs.tags }}
-          labels: ${{ steps.meta-despachos.outputs.labels }}
+          tags: tomasvaldivia20/backend-despachos:latest
           cache-from: type=gha,scope=despachos
           cache-to: type=gha,mode=max,scope=despachos
+
 
   # ─────────────────────────────────────────────────────────────────────
   # JOB 2: Deploy en EC2 Backend (SSH Proxy)
