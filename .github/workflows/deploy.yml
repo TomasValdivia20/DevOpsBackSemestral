@@ -1,5 +1,6 @@
 # .github/workflows/deploy.yml — Backend Innovatech Chile
 # Trigger: push a la rama 'deploy'
+# Descripción: 
 # Construye y publica AMBAS imágenes (Ventas + Despachos)
 # Luego despliega en el EC2 Backend (subred privada)
 
