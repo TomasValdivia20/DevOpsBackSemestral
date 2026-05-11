@@ -11,7 +11,7 @@ COPY pom.xml .
 RUN mvn dependency:go-offline -B
 
 # Copiar código fuente
-COPY src ./src
+COPY back-Ventas_SpringBoot/Springboot-API-REST/src ./src
 
 # Compilar y empaquetar (saltamos tests: se ejecutan en CI por separado)
 RUN mvn package -DskipTests -B
