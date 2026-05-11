@@ -133,12 +133,16 @@ jobs:
           envs: DOCKERHUB_TOKEN,MYSQL_ROOT_PASSWORD,DB_USERNAME,DB_PASSWORD,IMAGE_VENTAS,IMAGE_DESPACHOS
           script: |
             set -e
+
+            echo "--- Preparando directorio ---"
+            sudo mkdir -p /home/ubuntu/backend
+            sudo chown -R ubuntu:ubuntu /home/ubuntu/backend
             cd /home/ubuntu/backend
 
             echo "--- Login Docker Hub ---"
             echo "$DOCKERHUB_TOKEN" | docker login -u tomasvaldivia20 --password-stdin
 
-            echo "--- Creando archivo .env actualizado ---"
+            echo "--- Generando .env ---"
             cat > .env << ENVEOF
             MYSQL_ROOT_PASSWORD=$MYSQL_ROOT_PASSWORD
             DB_USERNAME=$DB_USERNAME
@@ -148,12 +152,17 @@ jobs:
             DOCKERHUB_USERNAME=tomasvaldivia20
             ENVEOF
 
-            echo "--- Descargando imágenes nuevas ---"
+            echo "--- Actualizando imágenes ---"
             docker pull $IMAGE_VENTAS:latest
             docker pull $IMAGE_DESPACHOS:latest
 
-            echo "--- Reiniciando stack con Docker Compose ---"
-            docker compose up -d --no-deps ventas despachos
+            echo "--- Reiniciando servicios ---"
+            # Intentamos primero con el binario docker-compose (V1) que es más común en instalaciones apt
+            if command -v docker-compose >/dev/null 2>&1; then
+                docker-compose up -d --no-deps ventas despachos
+            else
+                docker compose up -d --no-deps ventas despachos
+            fi
 
             docker image prune -f
-            echo "--- Despliegue de Backend completado exitosamente ---"
+            echo "--- ¡Backend desplegado exitosamente! ---"
