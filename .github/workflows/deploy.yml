@@ -6,7 +6,6 @@ on:
       - deploy
 
 env:
-  # Definimos nombres completos para evitar fallos de formato
   IMAGE_VENTAS: tomasvaldivia20/backend-ventas
   IMAGE_DESPACHOS: tomasvaldivia20/backend-despachos
 
@@ -43,7 +42,8 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
-          file: ./Springboot-API-REST/Dockerfile
+          # RUTA CORREGIDA: Carpeta padre + Subcarpeta
+          file: ./back-Ventas_SpringBoot/Springboot-API-REST/Dockerfile
           push: true
           tags: ${{ steps.meta-ventas.outputs.tags }}
           labels: ${{ steps.meta-ventas.outputs.labels }}
@@ -82,7 +82,8 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
-          file: ./Springboot-API-REST-DESPACHO/Dockerfile
+          # RUTA CORREGIDA: Carpeta padre + Subcarpeta
+          file: ./back-Despachos_SpringBoot/Springboot-API-REST-DESPACHO/Dockerfile
           push: true
           tags: ${{ steps.meta-despachos.outputs.tags }}
           labels: ${{ steps.meta-despachos.outputs.labels }}
@@ -90,7 +91,7 @@ jobs:
           cache-to: type=gha,mode=max,scope=despachos
 
   # ─────────────────────────────────────────────────────────────────────
-  # JOB 2: Deploy en EC2 Backend (Usando SSH Proxy)
+  # JOB 2: Deploy en EC2 Backend (SSH Proxy)
   # ─────────────────────────────────────────────────────────────────────
   deploy:
     name: Deploy en EC2 Backend
@@ -114,7 +115,6 @@ jobs:
 
       - name: Deploy en EC2 vía SSH
         uses: appleboy/ssh-action@v1.0.3
-        # Cargamos los secretos en el entorno local del corredor
         env:
           DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
           MYSQL_ROOT_PASSWORD: ${{ secrets.MYSQL_ROOT_PASSWORD }}
@@ -130,7 +130,6 @@ jobs:
           proxy_username: ${{ secrets.EC2_USER }}
           proxy_key: ${{ secrets.EC2_SSH_KEY }}
           timeout: 120s
-          # Pasamos estas variables a la sesión SSH
           envs: DOCKERHUB_TOKEN,MYSQL_ROOT_PASSWORD,DB_USERNAME,DB_PASSWORD,IMAGE_VENTAS,IMAGE_DESPACHOS
           script: |
             set -e
@@ -154,7 +153,7 @@ jobs:
             docker pull $IMAGE_DESPACHOS:latest
 
             echo "--- Reiniciando stack con Docker Compose ---"
-            # Levantamos los servicios de Java sin tumbar la DB
+            # Actualizamos solo los servicios Java sin tocar la base de datos
             docker compose up -d --no-deps ventas despachos
 
             docker image prune -f
