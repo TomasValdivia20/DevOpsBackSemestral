@@ -42,7 +42,7 @@ jobs:
       - name: Build & Push Ventas
         uses: docker/build-push-action@v5
         with:
-          context: ./Springboot-API-REST
+          context: .
           file: ./Springboot-API-REST/Dockerfile
           push: true
           tags: ${{ steps.meta-ventas.outputs.tags }}
@@ -81,7 +81,7 @@ jobs:
       - name: Build & Push Despachos
         uses: docker/build-push-action@v5
         with:
-          context: ./Springboot-API-REST-DESPACHO
+          context: .
           file: ./Springboot-API-REST-DESPACHO/Dockerfile
           push: true
           tags: ${{ steps.meta-despachos.outputs.tags }}
