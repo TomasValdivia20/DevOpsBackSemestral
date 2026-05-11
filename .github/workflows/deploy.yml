@@ -121,7 +121,8 @@ jobs:
             echo "--- Login Docker Hub ---"
             echo "$DOCKERHUB_TOKEN" | docker login -u tomasvaldivia20 --password-stdin
 
-            echo "--- Generando archivo .env actualizado ---"
+            echo "--- Generando archivo .env limpio ---"
+            # Creamos el .env para que Docker Compose lo use internamente
             cat > .env << ENVEOF
             MYSQL_ROOT_PASSWORD=$MYSQL_ROOT_PASSWORD
             DB_USERNAME=$DB_USERNAME
@@ -131,13 +132,13 @@ jobs:
             DOCKERHUB_USERNAME=tomasvaldivia20
             ENVEOF
 
-            echo "--- Actualizando imágenes ---"
+            echo "--- Descargando últimas imágenes ---"
             docker pull $IMAGE_VENTAS:latest
             docker pull $IMAGE_DESPACHOS:latest
             
-            echo "--- Reiniciando servicios con Docker Compose ---"
-            # CAMBIO CLAVE: Se usa docker-compose con guion para evitar error de flag -d
-            docker-compose up -d --no-deps ventas despachos
+            echo "--- Levantando servicios ---"
+            # Usamos docker-compose con guion y forzamos el uso del .env para evitar fallos de interpolación
+            docker-compose --env-file .env up -d --no-deps ventas despachos
             
             docker image prune -f
-            echo "--- ¡Despliegue de Backend completado exitosamente! ---"
+            echo "--- ¡Backend desplegado exitosamente! ---"

@@ -10,99 +10,54 @@ env:
   IMAGE_DESPACHOS: tomasvaldivia20/backend-despachos
 
 jobs:
-  # ─────────────────────────────────────────────────────────────────────
-  # JOB 1A: Build y Push Servicio Ventas
-  # ─────────────────────────────────────────────────────────────────────
   build-ventas:
     name: Build & Push — Servicio Ventas
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout código fuente
+      - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Configurar Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Login a Docker Hub
+      - name: Login Docker Hub
         uses: docker/login-action@v3
         with:
           username: tomasvaldivia20
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      - name: Metadata Ventas
-        id: meta-ventas
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.IMAGE_VENTAS }}
-          tags: |
-            type=raw,value=latest
-            type=sha,prefix=sha-
-
-      - name: Build & Push Ventas
+      - name: Build & Push
         uses: docker/build-push-action@v5
         with:
-          # CAMBIO VITAL: Contexto directo en la carpeta del código
           context: ./back-Ventas_SpringBoot/Springboot-API-REST
           file: ./back-Ventas_SpringBoot/Springboot-API-REST/Dockerfile
           push: true
-          tags: ${{ steps.meta-ventas.outputs.tags }}
-          labels: ${{ steps.meta-ventas.outputs.labels }}
-          cache-from: type=gha,scope=ventas
-          cache-to: type=gha,mode=max,scope=ventas
+          tags: tomasvaldivia20/backend-ventas:latest
 
-  # ─────────────────────────────────────────────────────────────────────
-  # JOB 1B: Build y Push Servicio Despachos
-  # ─────────────────────────────────────────────────────────────────────
   build-despachos:
     name: Build & Push — Servicio Despachos
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout código fuente
+      - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Configurar Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Login a Docker Hub
+      - name: Login Docker Hub
         uses: docker/login-action@v3
         with:
           username: tomasvaldivia20
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      - name: Metadata Despachos
-        id: meta-despachos
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.IMAGE_DESPACHOS }}
-          tags: |
-            type=raw,value=latest
-            type=sha,prefix=sha-
-
-      - name: Build & Push Despachos
+      - name: Build & Push
         uses: docker/build-push-action@v5
         with:
-          # CAMBIO VITAL: Contexto directo en la carpeta del código
           context: ./back-Despachos_SpringBoot/Springboot-API-REST-DESPACHO
           file: ./back-Despachos_SpringBoot/Springboot-API-REST-DESPACHO/Dockerfile
           push: true
-          tags: ${{ steps.meta-despachos.outputs.tags }}
-          labels: ${{ steps.meta-despachos.outputs.labels }}
-          cache-from: type=gha,scope=despachos
-          cache-to: type=gha,mode=max,scope=despachos
+          tags: tomasvaldivia20/backend-despachos:latest
 
-  # ─────────────────────────────────────────────────────────────────────
-  # JOB 2: Deploy en EC2 Backend (SSH Proxy)
-  # ─────────────────────────────────────────────────────────────────────
   deploy:
     name: Deploy en EC2 Backend
     runs-on: ubuntu-latest
     needs: [build-ventas, build-despachos]
     steps:
-      - name: Checkout (archivos de config)
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Copiar archivos al EC2
-        uses: appleboy/scp-action@v0.1.4
+      - name: Copiar archivos (SCP)
+        uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.EC2_BACKEND_HOST }}
           username: ${{ secrets.EC2_USER }}
@@ -110,18 +65,16 @@ jobs:
           proxy_host: ${{ secrets.EC2_FRONTEND_HOST }}   
           proxy_username: ${{ secrets.EC2_USER }}        
           proxy_key: ${{ secrets.EC2_SSH_KEY }}         
-          source: "docker-compose.yml,init.sql,.env.example"
+          source: "docker-compose.yml,init.sql"
           target: "/home/ubuntu/backend"
 
-      - name: Deploy en EC2 vía SSH
+      - name: Ejecutar comandos (SSH)
         uses: appleboy/ssh-action@v1.0.3
         env:
           DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
           MYSQL_ROOT_PASSWORD: ${{ secrets.MYSQL_ROOT_PASSWORD }}
           DB_USERNAME: ${{ secrets.DB_USERNAME }}
           DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
-          IMAGE_VENTAS: ${{ env.IMAGE_VENTAS }}
-          IMAGE_DESPACHOS: ${{ env.IMAGE_DESPACHOS }}
         with:
           host: ${{ secrets.EC2_BACKEND_HOST }}
           username: ${{ secrets.EC2_USER }}
@@ -129,42 +82,26 @@ jobs:
           proxy_host: ${{ secrets.EC2_FRONTEND_HOST }}
           proxy_username: ${{ secrets.EC2_USER }}
           proxy_key: ${{ secrets.EC2_SSH_KEY }}
-          timeout: 120s
-          envs: DOCKERHUB_TOKEN,MYSQL_ROOT_PASSWORD,DB_USERNAME,DB_PASSWORD,IMAGE_VENTAS,IMAGE_DESPACHOS
+          envs: DOCKERHUB_TOKEN,MYSQL_ROOT_PASSWORD,DB_USERNAME,DB_PASSWORD
           script: |
             set -e
-
-            echo "--- Preparando directorio ---"
-            sudo mkdir -p /home/ubuntu/backend
-            sudo chown -R ubuntu:ubuntu /home/ubuntu/backend
             cd /home/ubuntu/backend
 
             echo "--- Login Docker Hub ---"
             echo "$DOCKERHUB_TOKEN" | docker login -u tomasvaldivia20 --password-stdin
 
-            echo "--- Generando .env ---"
-            cat > .env << ENVEOF
-            MYSQL_ROOT_PASSWORD=$MYSQL_ROOT_PASSWORD
-            DB_USERNAME=$DB_USERNAME
-            DB_PASSWORD=$DB_PASSWORD
-            DB_NAME_VENTAS=ventas_db
-            DB_NAME_DESPACHOS=despachos_db
-            DOCKERHUB_USERNAME=tomasvaldivia20
-            ENVEOF
+            echo "--- Creando .env ---"
+            # IMPORTANTE: No usamos llaves de GitHub aquí, solo variables de bash
+            printf "MYSQL_ROOT_PASSWORD=%s\nDB_USERNAME=%s\nDB_PASSWORD=%s\n" \
+            "$MYSQL_ROOT_PASSWORD" "$DB_USERNAME" "$DB_PASSWORD" > .env
 
-            echo "--- Actualizando imágenes ---"
-            docker pull $IMAGE_VENTAS:latest
-            docker pull $IMAGE_DESPACHOS:latest
+            echo "--- Pull de imágenes ---"
+            docker pull tomasvaldivia20/backend-ventas:latest
+            docker pull tomasvaldivia20/backend-despachos:latest
 
-            echo "--- Reiniciando servicios ---"
-            # Intentamos primero con el binario docker-compose (V1) que es más común en instalaciones apt
-            if command -v docker-compose >/dev/null 2>&1; then
-                docker-compose up -d --no-deps ventas despachos
-            else
-                docker compose up -d --no-deps ventas despachos
-            fi
-
-            docker image prune -f
-            echo "--- ¡Backend desplegado exitosamente! ---"
-
+            echo "--- Reiniciando con Docker Compose ---"
+            # Intentamos con guion, que es el que tu server acepta
+            docker-compose up -d --no-deps ventas despachos
             
+            docker image prune -f
+            echo "--- ¡EXITO! ---"
