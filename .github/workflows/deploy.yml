@@ -1,9 +1,3 @@
-# .github/workflows/deploy.yml — Backend Innovatech Chile
-# Trigger: push a la rama 'deploy'
-# Descripción: 
-# Construye y publica AMBAS imágenes (Ventas + Despachos)
-# Luego despliega en el EC2 Backend (subred privada)
-
 name: CI/CD Backend — Innovatech Chile
 
 on:
@@ -12,31 +6,31 @@ on:
       - deploy
 
 env:
-  IMAGE_VENTAS:    ${{ secrets.DOCKERHUB_USERNAME }}/backend-ventas
-  IMAGE_DESPACHOS: ${{ secrets.DOCKERHUB_USERNAME }}/backend-despachos
+  # Definimos nombres completos para evitar fallos de formato
+  IMAGE_VENTAS: tomasvaldivia20/backend-ventas
+  IMAGE_DESPACHOS: tomasvaldivia20/backend-despachos
 
 jobs:
   # ─────────────────────────────────────────────────────────────────────
-  # JOB 1A: Build y Push imagen Ventas
+  # JOB 1A: Build y Push Servicio Ventas
   # ─────────────────────────────────────────────────────────────────────
   build-ventas:
-    name:  Build & Push — Servicio Ventas
+    name: Build & Push — Servicio Ventas
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout código fuente
         uses: actions/checkout@v4
 
-      - name:  Configurar Docker Buildx
+      - name: Configurar Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name:  Login a Docker Hub
+      - name: Login a Docker Hub
         uses: docker/login-action@v3
         with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          username: tomasvaldivia20
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name:  Metadata Ventas
+      - name: Metadata Ventas
         id: meta-ventas
         uses: docker/metadata-action@v5
         with:
@@ -45,7 +39,7 @@ jobs:
             type=raw,value=latest
             type=sha,prefix=sha-
 
-      - name:  Build & Push Ventas
+      - name: Build & Push Ventas
         uses: docker/build-push-action@v5
         with:
           context: ./Springboot-API-REST
@@ -57,26 +51,25 @@ jobs:
           cache-to: type=gha,mode=max,scope=ventas
 
   # ─────────────────────────────────────────────────────────────────────
-  # JOB 1B: Build y Push imagen Despachos (en paralelo con Ventas)
+  # JOB 1B: Build y Push Servicio Despachos
   # ─────────────────────────────────────────────────────────────────────
   build-despachos:
-    name:  Build & Push — Servicio Despachos
+    name: Build & Push — Servicio Despachos
     runs-on: ubuntu-latest
-
     steps:
-      - name:  Checkout código fuente
+      - name: Checkout código fuente
         uses: actions/checkout@v4
 
-      - name:  Configurar Docker Buildx
+      - name: Configurar Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name:  Login a Docker Hub
+      - name: Login a Docker Hub
         uses: docker/login-action@v3
         with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          username: tomasvaldivia20
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name:  Metadata Despachos
+      - name: Metadata Despachos
         id: meta-despachos
         uses: docker/metadata-action@v5
         with:
@@ -85,7 +78,7 @@ jobs:
             type=raw,value=latest
             type=sha,prefix=sha-
 
-      - name:  Build & Push Despachos
+      - name: Build & Push Despachos
         uses: docker/build-push-action@v5
         with:
           context: ./Springboot-API-REST-DESPACHO
@@ -97,18 +90,17 @@ jobs:
           cache-to: type=gha,mode=max,scope=despachos
 
   # ─────────────────────────────────────────────────────────────────────
-  # JOB 2: Deploy en EC2 Backend — espera que ambos builds terminen OK
+  # JOB 2: Deploy en EC2 Backend (Usando SSH Proxy)
   # ─────────────────────────────────────────────────────────────────────
   deploy:
-    name:  Deploy en EC2 Backend
+    name: Deploy en EC2 Backend
     runs-on: ubuntu-latest
     needs: [build-ventas, build-despachos]
-
     steps:
-      - name:  Checkout (para copiar docker-compose e init.sql)
+      - name: Checkout (archivos de config)
         uses: actions/checkout@v4
 
-      - name:  Copiar archivos de orquestación al EC2
+      - name: Copiar archivos al EC2
         uses: appleboy/scp-action@v0.1.4
         with:
           host: ${{ secrets.EC2_BACKEND_HOST }}
@@ -121,62 +113,49 @@ jobs:
           target: "/home/ubuntu/backend"
 
       - name: Deploy en EC2 vía SSH
-        uses: appleboy/ssh-action@v1.0.0
+        uses: appleboy/ssh-action@v1.0.3
+        # Cargamos los secretos en el entorno local del corredor
+        env:
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+          MYSQL_ROOT_PASSWORD: ${{ secrets.MYSQL_ROOT_PASSWORD }}
+          DB_USERNAME: ${{ secrets.DB_USERNAME }}
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+          IMAGE_VENTAS: ${{ env.IMAGE_VENTAS }}
+          IMAGE_DESPACHOS: ${{ env.IMAGE_DESPACHOS }}
         with:
           host: ${{ secrets.EC2_BACKEND_HOST }}
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_SSH_KEY }}
-          proxy_host: ${{ secrets.EC2_FRONTEND_HOST }}   # IP Pública del Frontend
-          proxy_username: ${{ secrets.EC2_USER }}        # ubuntu
-          proxy_key: ${{ secrets.EC2_SSH_KEY }}          # La misma llave .pem
+          proxy_host: ${{ secrets.EC2_FRONTEND_HOST }}
+          proxy_username: ${{ secrets.EC2_USER }}
+          proxy_key: ${{ secrets.EC2_SSH_KEY }}
           timeout: 120s
+          # Pasamos estas variables a la sesión SSH
+          envs: DOCKERHUB_TOKEN,MYSQL_ROOT_PASSWORD,DB_USERNAME,DB_PASSWORD,IMAGE_VENTAS,IMAGE_DESPACHOS
           script: |
-            echo "=========================================="
-            echo "  Iniciando despliegue Backend"
-            echo "=========================================="
-
+            set -e
             cd /home/ubuntu/backend
 
-            # Login a Docker Hub desde EC2
-            echo "${{ secrets.DOCKERHUB_TOKEN }}" | \
-              docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
+            echo "--- Login Docker Hub ---"
+            echo "$DOCKERHUB_TOKEN" | docker login -u tomasvaldivia20 --password-stdin
 
-            # Crear .env con los secrets de GitHub
-            # (nunca se exponen en logs gracias a GitHub Secrets)
-            cat > .env << 'ENVEOF'
-            MYSQL_ROOT_PASSWORD=${{ secrets.MYSQL_ROOT_PASSWORD }}
-            DB_USERNAME=${{ secrets.DB_USERNAME }}
-            DB_PASSWORD=${{ secrets.DB_PASSWORD }}
+            echo "--- Creando archivo .env actualizado ---"
+            cat > .env << ENVEOF
+            MYSQL_ROOT_PASSWORD=$MYSQL_ROOT_PASSWORD
+            DB_USERNAME=$DB_USERNAME
+            DB_PASSWORD=$DB_PASSWORD
             DB_NAME_VENTAS=ventas_db
             DB_NAME_DESPACHOS=despachos_db
-            DOCKERHUB_USERNAME=${{ secrets.DOCKERHUB_USERNAME }}
+            DOCKERHUB_USERNAME=tomasvaldivia20
             ENVEOF
 
-            # Pull de las imágenes más recientes
-            docker pull ${{ env.IMAGE_VENTAS }}:latest
-            docker pull ${{ env.IMAGE_DESPACHOS }}:latest
+            echo "--- Descargando imágenes nuevas ---"
+            docker pull $IMAGE_VENTAS:latest
+            docker pull $IMAGE_DESPACHOS:latest
 
-            # Actualizar SOLO los servicios de app (sin recrear MySQL/volúmenes)
-            # --no-deps: no recrea dependencias → MySQL y sus datos se preservan
+            echo "--- Reiniciando stack con Docker Compose ---"
+            # Levantamos los servicios de Java sin tumbar la DB
             docker compose up -d --no-deps ventas despachos
 
-            # Primera vez (o si MySQL no está corriendo): levantar todo
-            # docker compose up -d
-
-            # Verificar estado de todos los servicios
-            echo "--- Estado del stack ---"
-            docker compose ps
-
-            # Mostrar logs recientes para verificar que arrancaron OK
-            echo "--- Logs Ventas (últimas 10 líneas) ---"
-            docker compose logs --tail=10 ventas
-
-            echo "--- Logs Despachos (últimas 10 líneas) ---"
-            docker compose logs --tail=10 despachos
-
-            # Limpiar imágenes antiguas (liberar espacio en disco)
             docker image prune -f
-
-            echo "=========================================="
-            echo "   Despliegue Backend completado"
-            echo "=========================================="
+            echo "--- Despliegue de Backend completado exitosamente ---"
