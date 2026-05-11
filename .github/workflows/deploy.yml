@@ -41,9 +41,8 @@ jobs:
       - name: Build & Push Ventas
         uses: docker/build-push-action@v5
         with:
-          context: .
-          # RUTA CORREGIDA: Carpeta padre + Subcarpeta
-          file: ./back-Ventas_SpringBoot/Springboot-API-REST/Dockerfile
+          context: . # Volvemos a la raíz para que vea TODO
+          file: ./back-Ventas_SpringBoot/Springboot-API-REST/Dockerfile # Pasamos la ruta de la subcarpeta como argumento si el Dockerfile lo requiere# o simplemente dejamos que el file: maneje la lógica.
           push: true
           tags: ${{ steps.meta-ventas.outputs.tags }}
           labels: ${{ steps.meta-ventas.outputs.labels }}
