@@ -49,7 +49,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: ./Springboot-API-REST
-          dockerfile: ./Springboot-API-REST/Dockerfile
+          file: ./Springboot-API-REST/Dockerfile
           push: true
           tags: ${{ steps.meta-ventas.outputs.tags }}
           labels: ${{ steps.meta-ventas.outputs.labels }}
@@ -89,7 +89,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: ./Springboot-API-REST-DESPACHO
-          dockerfile: ./Springboot-API-REST-DESPACHO/Dockerfile
+          file: ./Springboot-API-REST-DESPACHO/Dockerfile
           push: true
           tags: ${{ steps.meta-despachos.outputs.tags }}
           labels: ${{ steps.meta-despachos.outputs.labels }}
@@ -114,6 +114,9 @@ jobs:
           host: ${{ secrets.EC2_BACKEND_HOST }}
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_SSH_KEY }}
+          proxy_host: ${{ secrets.EC2_FRONTEND_HOST }}   
+          proxy_username: ${{ secrets.EC2_USER }}        
+          proxy_key: ${{ secrets.EC2_SSH_KEY }}         
           source: "docker-compose.yml,init.sql,.env.example"
           target: "/home/ubuntu/backend"
 
@@ -123,6 +126,9 @@ jobs:
           host: ${{ secrets.EC2_BACKEND_HOST }}
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_SSH_KEY }}
+          proxy_host: ${{ secrets.EC2_FRONTEND_HOST }}   # IP Pública del Frontend
+          proxy_username: ${{ secrets.EC2_USER }}        # ubuntu
+          proxy_key: ${{ secrets.EC2_SSH_KEY }}          # La misma llave .pem
           timeout: 120s
           script: |
             echo "=========================================="
