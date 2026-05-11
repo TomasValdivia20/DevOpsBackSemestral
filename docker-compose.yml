@@ -1,156 +1,159 @@
-# docker-compose.yml — Backend Innovatech Chile
-# Orquesta: Ventas (8080) + Despachos (8081) + MySQL
-#
-# Uso:
-#   cp .env.example .env && nano .env    (rellenar valores)
-#   docker compose up -d --build
-#   docker compose logs -f
-#   docker compose ps
-version: '3.8'
+name: CI/CD Backend — Innovatech Chile
 
-services:
-  # ─────────────────────────────────────────────────────
-  # Base de datos MySQL compartida
-  # Crea automáticamente ventas_db y despachos_db
-  # ─────────────────────────────────────────────────────
-  mysql:
-    image: mysql:8.0
-    container_name: innovatech-mysql
+on:
+  push:
+    branches:
+      - deploy
 
-    environment:
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
-      MYSQL_USER:          ${DB_USERNAME}
-      MYSQL_PASSWORD:      ${DB_PASSWORD}
-      # Crea la primera DB automáticamente; la segunda la crea init.sql
-      MYSQL_DATABASE:      ${DB_NAME_VENTAS}
+env:
+  IMAGE_VENTAS: tomasvaldivia20/backend-ventas
+  IMAGE_DESPACHOS: tomasvaldivia20/backend-despachos
 
-    # Puerto NO expuesto al host intencionalmente (seguridad)
-    # Solo accesible dentro de la red interna backend-network
-    expose:
-      - "3306"
+jobs:
+  # ─────────────────────────────────────────────────────────────────────
+  # JOB 1A: Build y Push Servicio Ventas
+  # ─────────────────────────────────────────────────────────────────────
+  build-ventas:
+    name: Build & Push — Servicio Ventas
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout código fuente
+        uses: actions/checkout@v4
 
-    networks:
-      - backend-network
+      - name: Configurar Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
-    # NAMED VOLUME para persistencia de datos
-    # Los datos sobreviven a reinicios y reconstrucciones del contenedor
-    volumes:
-      - mysql-data:/var/lib/mysql
-      # Script de inicialización: crea la DB de despachos
-      - ./init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+      - name: Login a Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: tomasvaldivia20
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-    # Health check: MySQL lista para aceptar conexiones
-    healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost",
-             "-u", "${DB_USERNAME}", "-p${DB_PASSWORD}"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-      start_period: 30s
+      - name: Metadata Ventas
+        id: meta-ventas
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE_VENTAS }}
+          tags: |
+            type=raw,value=latest
+            type=sha,prefix=sha-
 
-    restart: unless-stopped
+      - name: Build & Push Ventas
+        uses: docker/build-push-action@v5
+        with:
+          # CAMBIO VITAL: Contexto directo en la carpeta del código
+          context: ./back-Ventas_SpringBoot/Springboot-API-REST
+          file: ./back-Ventas_SpringBoot/Springboot-API-REST/Dockerfile
+          push: true
+          tags: ${{ steps.meta-ventas.outputs.tags }}
+          labels: ${{ steps.meta-ventas.outputs.labels }}
+          cache-from: type=gha,scope=ventas
+          cache-to: type=gha,mode=max,scope=ventas
 
-  # ─────────────────────────────────────────────────────
-  # Servicio Ventas — Spring Boot en puerto 8080
-  # API REST: /api/v1/ventas
-  # ─────────────────────────────────────────────────────
-  ventas:
-    build:
-      context: ./Springboot-API-REST
-      dockerfile: Dockerfile
-      target: runner
+  # ─────────────────────────────────────────────────────────────────────
+  # JOB 1B: Build y Push Servicio Despachos
+  # ─────────────────────────────────────────────────────────────────────
+  build-despachos:
+    name: Build & Push — Servicio Despachos
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout código fuente
+        uses: actions/checkout@v4
 
-    image: ${DOCKERHUB_USERNAME:-innovatech}/backend-ventas:latest
-    container_name: innovatech-ventas
+      - name: Configurar Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
-    ports:
-      - "8080:8080"
+      - name: Login a Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: tomasvaldivia20
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-    environment:
-      # Variables que consumen application.properties
-      DB_ENDPOINT: mysql           # nombre del servicio en docker-compose
-      DB_PORT:     3306
-      DB_NAME:     ${DB_NAME_VENTAS}
-      DB_USERNAME: ${DB_USERNAME}
-      DB_PASSWORD: ${DB_PASSWORD}
-      # Perfil de Spring Boot
-      SPRING_PROFILES_ACTIVE: prod
+      - name: Metadata Despachos
+        id: meta-despachos
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE_DESPACHOS }}
+          tags: |
+            type=raw,value=latest
+            type=sha,prefix=sha-
 
-    env_file:
-      - .env
+      - name: Build & Push Despachos
+        uses: docker/build-push-action@v5
+        with:
+          # CAMBIO VITAL: Contexto directo en la carpeta del código
+          context: ./back-Despachos_SpringBoot/Springboot-API-REST-DESPACHO
+          file: ./back-Despachos_SpringBoot/Springboot-API-REST-DESPACHO/Dockerfile
+          push: true
+          tags: ${{ steps.meta-despachos.outputs.tags }}
+          labels: ${{ steps.meta-despachos.outputs.labels }}
+          cache-from: type=gha,scope=despachos
+          cache-to: type=gha,mode=max,scope=despachos
 
-    depends_on:
-      mysql:
-        condition: service_healthy   # Espera que MySQL esté lista
+  # ─────────────────────────────────────────────────────────────────────
+  # JOB 2: Deploy en EC2 Backend (SSH Proxy)
+  # ─────────────────────────────────────────────────────────────────────
+  deploy:
+    name: Deploy en EC2 Backend
+    runs-on: ubuntu-latest
+    needs: [build-ventas, build-despachos]
+    steps:
+      - name: Checkout (archivos de config)
+        uses: actions/checkout@v4
 
-    networks:
-      - backend-network
+      - name: Copiar archivos al EC2
+        uses: appleboy/scp-action@v0.1.4
+        with:
+          host: ${{ secrets.EC2_BACKEND_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          proxy_host: ${{ secrets.EC2_FRONTEND_HOST }}   
+          proxy_username: ${{ secrets.EC2_USER }}        
+          proxy_key: ${{ secrets.EC2_SSH_KEY }}         
+          source: "docker-compose.yml,init.sql,.env.example"
+          target: "/home/ubuntu/backend"
 
-    volumes:
-      - ventas-logs:/app/logs
+      - name: Deploy en EC2 vía SSH
+        uses: appleboy/ssh-action@v1.0.3
+        env:
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+          MYSQL_ROOT_PASSWORD: ${{ secrets.MYSQL_ROOT_PASSWORD }}
+          DB_USERNAME: ${{ secrets.DB_USERNAME }}
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+          IMAGE_VENTAS: ${{ env.IMAGE_VENTAS }}
+          IMAGE_DESPACHOS: ${{ env.IMAGE_DESPACHOS }}
+        with:
+          host: ${{ secrets.EC2_BACKEND_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          proxy_host: ${{ secrets.EC2_FRONTEND_HOST }}
+          proxy_username: ${{ secrets.EC2_USER }}
+          proxy_key: ${{ secrets.EC2_SSH_KEY }}
+          timeout: 120s
+          envs: DOCKERHUB_TOKEN,MYSQL_ROOT_PASSWORD,DB_USERNAME,DB_PASSWORD,IMAGE_VENTAS,IMAGE_DESPACHOS
+          script: |
+            set -e
+            cd /home/ubuntu/backend
 
-    restart: unless-stopped
+            echo "--- Login Docker Hub ---"
+            echo "$DOCKERHUB_TOKEN" | docker login -u tomasvaldivia20 --password-stdin
 
-  # ─────────────────────────────────────────────────────
-  # Servicio Despachos — Spring Boot en puerto 8081
-  # API REST: /api/v1/despachos
-  # ─────────────────────────────────────────────────────
-  despachos:
-    build:
-      context: ./Springboot-API-REST-DESPACHO
-      dockerfile: Dockerfile
-      target: runner
+            echo "--- Creando archivo .env actualizado ---"
+            cat > .env << ENVEOF
+            MYSQL_ROOT_PASSWORD=$MYSQL_ROOT_PASSWORD
+            DB_USERNAME=$DB_USERNAME
+            DB_PASSWORD=$DB_PASSWORD
+            DB_NAME_VENTAS=ventas_db
+            DB_NAME_DESPACHOS=despachos_db
+            DOCKERHUB_USERNAME=tomasvaldivia20
+            ENVEOF
 
-    image: ${DOCKERHUB_USERNAME:-innovatech}/backend-despachos:latest
-    container_name: innovatech-despachos
+            echo "--- Descargando imágenes nuevas ---"
+            docker pull $IMAGE_VENTAS:latest
+            docker pull $IMAGE_DESPACHOS:latest
 
-    ports:
-      - "8081:8081"
+            echo "--- Reiniciando stack con Docker Compose ---"
+            docker compose up -d --no-deps ventas despachos
 
-    environment:
-      DB_ENDPOINT: mysql
-      DB_PORT:     3306
-      DB_NAME:     ${DB_NAME_DESPACHOS}
-      DB_USERNAME: ${DB_USERNAME}
-      DB_PASSWORD: ${DB_PASSWORD}
-      SPRING_PROFILES_ACTIVE: prod
-
-    env_file:
-      - .env
-
-    depends_on:
-      mysql:
-        condition: service_healthy
-      ventas:
-        condition: service_started   # Despachos depende de que Ventas esté arriba
-
-    networks:
-      - backend-network
-
-    volumes:
-      - despachos-logs:/app/logs
-
-    restart: unless-stopped
-
-# ─────────────────────────────────────────────────────────────────
-# RED INTERNA
-# Todos los servicios se comunican por nombre dentro de esta red
-# MySQL NO tiene puerto mapeado al host → solo accesible internamente
-# ─────────────────────────────────────────────────────────────────
-networks:
-  backend-network:
-    driver: bridge
-
-# ─────────────────────────────────────────────────────────────────
-# VOLÚMENES NOMBRADOS (Named Volumes)
-# Docker gestiona la ubicación en /var/lib/docker/volumes/
-# Ventaja sobre bind mount: más portable, mejor para producción EC2
-# mysql-data: CRÍTICO — contiene todas las tablas y registros
-# ─────────────────────────────────────────────────────────────────
-volumes:
-  mysql-data:
-    driver: local
-  ventas-logs:
-    driver: local
-  despachos-logs:
-    driver: local
+            docker image prune -f
+            echo "--- Despliegue de Backend completado exitosamente ---"
