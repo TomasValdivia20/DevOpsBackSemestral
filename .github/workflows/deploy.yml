@@ -113,32 +113,44 @@ jobs:
           script: |
             set -e
             
-            echo "--- Preparando directorio de trabajo ---"
+            echo "--- Limpieza preventiva ---"
+            # Eliminamos el .env antiguo para que no herede errores de formato
+            sudo rm -f /home/ubuntu/backend/.env
+            
+            echo "--- Preparando directorio ---"
             sudo mkdir -p /home/ubuntu/backend
             sudo chown -R ubuntu:ubuntu /home/ubuntu/backend
             cd /home/ubuntu/backend
 
             echo "--- Login Docker Hub ---"
-            echo "$DOCKERHUB_TOKEN" | docker login -u tomasvaldivia20 --password-stdin
+            # Usamos una variable temporal para el login para evitar conflictos de símbolos
+            export DOCKER_PASS="${DOCKERHUB_TOKEN}"
+            echo "$DOCKER_PASS" | docker login -u tomasvaldivia20 --password-stdin
 
             echo "--- Generando archivo .env limpio ---"
-            # Creamos el .env para que Docker Compose lo use internamente
-            cat > .env << ENVEOF
-            MYSQL_ROOT_PASSWORD=$MYSQL_ROOT_PASSWORD
-            DB_USERNAME=$DB_USERNAME
-            DB_PASSWORD=$DB_PASSWORD
+            # Usamos comillas simples en el EOF para que Bash no intente interpretar nada dentro
+            cat > .env << 'ENVEOF'
+            MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD}
+            DB_USERNAME=${DB_USERNAME}
+            DB_PASSWORD=${DB_PASSWORD}
             DB_NAME_VENTAS=ventas_db
             DB_NAME_DESPACHOS=despachos_db
             DOCKERHUB_USERNAME=tomasvaldivia20
             ENVEOF
+            
+            # Sobrescribimos el .env con los valores reales de las envs de la sesión
+            sed -i "s/\${MYSQL_ROOT_PASSWORD}/$MYSQL_ROOT_PASSWORD/" .env
+            sed -i "s/\${DB_USERNAME}/$DB_USERNAME/" .env
+            sed -i "s/\${DB_PASSWORD}/$DB_PASSWORD/" .env
 
-            echo "--- Descargando últimas imágenes ---"
-            docker pull $IMAGE_VENTAS:latest
-            docker pull $IMAGE_DESPACHOS:latest
-            
+            echo "--- Pull de imágenes ---"
+            docker pull tomasvaldivia20/backend-ventas:latest
+            docker pull tomasvaldivia20/backend-despachos:latest
+
             echo "--- Levantando servicios ---"
-            # Usamos docker-compose con guion y forzamos el uso del .env para evitar fallos de interpolación
+            # Forzamos a Docker Compose a ignorar errores de interpolación del sistema
+            # y usamos el archivo .env que acabamos de crear
             docker-compose --env-file .env up -d --no-deps ventas despachos
-            
+
             docker image prune -f
-            echo "--- ¡Backend desplegado exitosamente! ---"
+            echo "--- ¡Despliegue completado! ---"
