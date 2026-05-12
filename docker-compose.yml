@@ -1,40 +1,13 @@
 version: '3.8'
 
 services:
-  # Base de Datos MySQL
-  mysql-db:
-    image: mysql:8.0
-    container_name: mysql-container
-    restart: always
-    environment:
-      - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD}
-      - MYSQL_USER=${DB_USERNAME}
-      - MYSQL_PASSWORD=${DB_PASSWORD}
-    ports:
-      - "3306:3306"
-    volumes:
-      - db-data:/var/lib/mysql
-      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
-    healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    networks:
-      - app-network
-
   # Servicio Ventas
   ventas:
     image: tomasvaldivia20/backend-ventas:latest
     container_name: ventas-container
     restart: always
-    depends_on:
-      mysql-db:
-        condition: service_healthy
-    environment:
-      - SPRING_DATASOURCE_URL=jdbc:mysql://mysql-db:3306/ventas_db
-      - SPRING_DATASOURCE_USERNAME=${DB_USERNAME}
-      - SPRING_DATASOURCE_PASSWORD=${DB_PASSWORD}
+    env_file:
+      - .env
     ports:
       - "8081:8081"
     networks:
@@ -45,13 +18,8 @@ services:
     image: tomasvaldivia20/backend-despachos:latest
     container_name: despachos-container
     restart: always
-    depends_on:
-      mysql-db:
-        condition: service_healthy
-    environment:
-      - SPRING_DATASOURCE_URL=jdbc:mysql://mysql-db:3306/despachos_db
-      - SPRING_DATASOURCE_USERNAME=${DB_USERNAME}
-      - SPRING_DATASOURCE_PASSWORD=${DB_PASSWORD}
+    env_file:
+      - .env
     ports:
       - "8082:8082"
     networks:
@@ -60,6 +28,3 @@ services:
 networks:
   app-network:
     driver: bridge
-
-volumes:
-  db-data:
