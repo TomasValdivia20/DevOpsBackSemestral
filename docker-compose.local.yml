@@ -1,0 +1,92 @@
+version: '3.8'
+
+services:
+  mysql-ventas:
+    image: mysql:8.0
+    container_name: mysql-ventas-local
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpass
+      MYSQL_DATABASE: ventas_db
+      MYSQL_USER: ventas_user
+      MYSQL_PASSWORD: ventas_pass
+    ports:
+      - "3307:3306"
+    networks:
+      - local-network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  mysql-despachos:
+    image: mysql:8.0
+    container_name: mysql-despachos-local
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpass
+      MYSQL_DATABASE: despachos_db
+      MYSQL_USER: despachos_user
+      MYSQL_PASSWORD: despachos_pass
+    ports:
+      - "3308:3306"
+    networks:
+      - local-network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  ventas:
+    build:
+      context: ./back-Ventas_SpringBoot/Springboot-API-REST
+      dockerfile: Dockerfile
+      args:
+        PORT: 8081
+        HEALTH_PATH: /api/v1/ventas
+    container_name: ventas-container-local
+    restart: unless-stopped
+    depends_on:
+      mysql-ventas:
+        condition: service_healthy
+    environment:
+      DB_ENDPOINT_VENTAS: mysql-ventas
+      DB_PORT_VENTAS: "3306"
+      DB_NAME_VENTAS: ventas_db
+      DB_USERNAME_VENTAS: ventas_user
+      DB_PASSWORD_VENTAS: ventas_pass
+      SERVICE_PORT: "8081"
+    ports:
+      - "8081:8081"
+    networks:
+      - local-network
+
+  despachos:
+    build:
+      context: ./back-Despachos_SpringBoot/Springboot-API-REST-DESPACHO
+      dockerfile: Dockerfile
+      args:
+        PORT: 8082
+        HEALTH_PATH: /api/v1/despachos
+    container_name: despachos-container-local
+    restart: unless-stopped
+    depends_on:
+      mysql-despachos:
+        condition: service_healthy
+    environment:
+      DB_ENDPOINT_DESPACHOS: mysql-despachos
+      DB_PORT_DESPACHOS: "3306"
+      DB_NAME_DESPACHOS: despachos_db
+      DB_USERNAME_DESPACHOS: despachos_user
+      DB_PASSWORD_DESPACHOS: despachos_pass
+      SERVICE_PORT: "8082"
+    ports:
+      - "8082:8082"
+    networks:
+      - local-network
+
+networks:
+  local-network:
+    driver: bridge

@@ -3,25 +3,35 @@ version: '3.8'
 services:
   # Servicio Ventas
   ventas:
-    image: tomasvaldivia20/backend-ventas:latest
+    build:
+      context: ./back-Ventas_SpringBoot # Ruta a la carpeta del backend de Ventas
+      dockerfile: Dockerfile     # Nombre del archivo Dockerfile
+      args:
+        PORT: 8081               # Puerto interno que usará Spring Boot
+        HEALTH_PATH: /api/v1/ventas # Endpoint de salud específico de Ventas
     container_name: ventas-container
     restart: always
     env_file:
       - .env
     ports:
-      - "8081:8081"
+      - "8081:8081"              # Mapeo de puertos (Host:Contenedor)
     networks:
       - app-network
 
   # Servicio Despachos
   despachos:
-    image: tomasvaldivia20/backend-despachos:latest
+    build:
+      context: ./back-Despachos_SpringBoot # Ruta a la carpeta del backend de Despachos
+      dockerfile: Dockerfile       # Nombre del archivo Dockerfile
+      args:
+        PORT: 8082                 # Puerto interno que usará Spring Boot
+        HEALTH_PATH: /api/v1/despachos # Endpoint de salud específico de Despachos
     container_name: despachos-container
     restart: always
     env_file:
       - .env
     ports:
-      - "8082:8082"
+      - "8082:8082"                # Mapeo de puertos (Host:Contenedor)
     networks:
       - app-network
 

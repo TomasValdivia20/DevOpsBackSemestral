@@ -1,47 +1,52 @@
 # ================================================================
-# STAGE 1: Builder — compila el proyecto con Maven
+# STAGE 1: Builder — Compilación optimizada
 # ================================================================
 FROM maven:3.9.6-eclipse-temurin-17 AS builder
 
 WORKDIR /app
 
-# Copiar pom.xml primero → Maven descarga dependencias en esta capa
-# Si pom.xml no cambia, la capa se cachea y el build es mucho más rápido
+# Cachear dependencias de Maven
 COPY pom.xml .
 RUN mvn dependency:go-offline -B
 
-# Copiar código fuente
+# Copiar código fuente y compilar
 COPY src ./src
-
-# Compilar y empaquetar (saltamos tests: se ejecutan en CI por separado)
-RUN mvn package -DskipTests -B
+RUN mvn clean package -DskipTests -B
 
 # ================================================================
-# STAGE 2: Runner — imagen JRE mínima para producción
+# STAGE 2: Runner — Imagen final segura y de mínimo privilegio
 # ================================================================
 FROM eclipse-temurin:17-jre-alpine AS runner
 
-# Crear usuario y grupo no root (principio mínimo privilegio)
+# Instalar dependencias necesarias para el Healthcheck (curl o wget si faltan)
+RUN apk add --no-cache curl
+
+# Crear usuario no root (Exigido por la pauta de seguridad)
 RUN addgroup -S appgroup && adduser -S appuser -G appgroup
 
 WORKDIR /app
 
-# Copiar SOLO el JAR generado desde el stage builder
-# No copiamos código fuente ni dependencias de Maven → imagen mucho más pequeña
+# Parámetros configurables en tiempo de build (Evita duplicar código)
+ARG PORT=8080
+ARG HEALTH_PATH=/api/v1/health
+
+# Pasar los argumentos a variables de entorno para que persistan en el contenedor
+ENV SERVICE_PORT=${PORT}
+ENV SERVICE_HEALTH_PATH=${HEALTH_PATH}
+
+# Copiar el JAR evitando conflictos de comodines (usando un renombrado limpio en el pom si es necesario o apuntando directo)
 COPY --from=builder --chown=appuser:appgroup /app/target/*.jar app.jar
 
-# Usar usuario no root antes de ejecutar
 USER appuser
 
-# Puerto del servicio Ventas (configurado en application.properties: 8080 default)
-EXPOSE 8080
+# Exponer dinámicamente el puerto configurado
+EXPOSE ${SERVICE_PORT}
 
-# Health check: verifica que el servicio responde
-# Espera 60s de inicio (Spring Boot tarda en arrancar)
+# Health check corregido usando curl (más confiable) y variables dinámicas
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-  CMD wget -qO- http://localhost:8080/api/v1/ventas 2>/dev/null && echo "OK" || exit 1
+  CMD curl -f http://localhost:${SERVICE_PORT}${SERVICE_HEALTH_PATH} || exit 1
 
-# Ejecutar el JAR con opciones JVM optimizadas para contenedor
+# Opciones JVM optimizadas para el uso de memoria en contenedores de AWS
 CMD ["java", \
      "-XX:+UseContainerSupport", \
      "-XX:MaxRAMPercentage=75.0", \

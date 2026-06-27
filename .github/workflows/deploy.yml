@@ -29,13 +29,34 @@ jobs:
           username: tomasvaldivia20
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Build & Push Ventas
+      - name: Build & Push Ventas (Docker Hub)
         uses: docker/build-push-action@v5
         with:
           context: ./back-Ventas_SpringBoot/Springboot-API-REST
           file: ./back-Ventas_SpringBoot/Springboot-API-REST/Dockerfile
           push: true
           tags: tomasvaldivia20/backend-ventas:latest
+          cache-from: type=gha,scope=ventas
+          cache-to: type=gha,mode=max,scope=ventas
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build & Push Ventas (ECR)
+        uses: docker/build-push-action@v5
+        with:
+          context: ./back-Ventas_SpringBoot/Springboot-API-REST
+          file: ./back-Ventas_SpringBoot/Springboot-API-REST/Dockerfile
+          push: true
+          tags: ${{ secrets.ECR_REGISTRY }}/backend-ventas:latest
           cache-from: type=gha,scope=ventas
           cache-to: type=gha,mode=max,scope=ventas
 
@@ -58,13 +79,34 @@ jobs:
           username: tomasvaldivia20
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Build & Push Despachos
+      - name: Build & Push Despachos (Docker Hub)
         uses: docker/build-push-action@v5
         with:
           context: ./back-Despachos_SpringBoot/Springboot-API-REST-DESPACHO
           file: ./back-Despachos_SpringBoot/Springboot-API-REST-DESPACHO/Dockerfile
           push: true
           tags: tomasvaldivia20/backend-despachos:latest
+          cache-from: type=gha,scope=despachos
+          cache-to: type=gha,mode=max,scope=despachos
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build & Push Despachos (ECR)
+        uses: docker/build-push-action@v5
+        with:
+          context: ./back-Despachos_SpringBoot/Springboot-API-REST-DESPACHO
+          file: ./back-Despachos_SpringBoot/Springboot-API-REST-DESPACHO/Dockerfile
+          push: true
+          tags: ${{ secrets.ECR_REGISTRY }}/backend-despachos:latest
           cache-from: type=gha,scope=despachos
           cache-to: type=gha,mode=max,scope=despachos
 
@@ -96,9 +138,16 @@ jobs:
         uses: appleboy/ssh-action@v1.0.3
         env:
           DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
-          MYSQL_ROOT_PASSWORD: ${{ secrets.MYSQL_ROOT_PASSWORD }}
-          DB_USERNAME: ${{ secrets.DB_USERNAME }}
-          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+          DB_ENDPOINT_VENTAS: ${{ secrets.DB_ENDPOINT_VENTAS }}
+          DB_PORT_VENTAS: ${{ secrets.DB_PORT_VENTAS }}
+          DB_NAME_VENTAS: ${{ secrets.DB_NAME_VENTAS }}
+          DB_USERNAME_VENTAS: ${{ secrets.DB_USERNAME_VENTAS }}
+          DB_PASSWORD_VENTAS: ${{ secrets.DB_PASSWORD_VENTAS }}
+          DB_ENDPOINT_DESPACHOS: ${{ secrets.DB_ENDPOINT_DESPACHOS }}
+          DB_PORT_DESPACHOS: ${{ secrets.DB_PORT_DESPACHOS }}
+          DB_NAME_DESPACHOS: ${{ secrets.DB_NAME_DESPACHOS }}
+          DB_USERNAME_DESPACHOS: ${{ secrets.DB_USERNAME_DESPACHOS }}
+          DB_PASSWORD_DESPACHOS: ${{ secrets.DB_PASSWORD_DESPACHOS }}
           IMAGE_VENTAS: ${{ env.IMAGE_VENTAS }}
           IMAGE_DESPACHOS: ${{ env.IMAGE_DESPACHOS }}
         with:
@@ -109,7 +158,7 @@ jobs:
           proxy_username: ${{ secrets.EC2_USER }}
           proxy_key: ${{ secrets.EC2_SSH_KEY }}
           timeout: 120s
-          envs: DOCKERHUB_TOKEN,MYSQL_ROOT_PASSWORD,DB_USERNAME,DB_PASSWORD,IMAGE_VENTAS,IMAGE_DESPACHOS
+          envs: DOCKERHUB_TOKEN,DB_ENDPOINT_VENTAS,DB_PORT_VENTAS,DB_NAME_VENTAS,DB_USERNAME_VENTAS,DB_PASSWORD_VENTAS,DB_ENDPOINT_DESPACHOS,DB_PORT_DESPACHOS,DB_NAME_DESPACHOS,DB_USERNAME_DESPACHOS,DB_PASSWORD_DESPACHOS,IMAGE_VENTAS,IMAGE_DESPACHOS
           script: |
             set -e
             
@@ -130,18 +179,30 @@ jobs:
             echo "--- Generando archivo .env limpio ---"
             # Usamos comillas simples en el EOF para que Bash no intente interpretar nada dentro
             cat > .env << 'ENVEOF'
-            MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD}
-            DB_USERNAME=${DB_USERNAME}
-            DB_PASSWORD=${DB_PASSWORD}
-            DB_NAME_VENTAS=ventas_db
-            DB_NAME_DESPACHOS=despachos_db
+            DB_ENDPOINT_VENTAS=${DB_ENDPOINT_VENTAS}
+            DB_PORT_VENTAS=${DB_PORT_VENTAS}
+            DB_NAME_VENTAS=${DB_NAME_VENTAS}
+            DB_USERNAME_VENTAS=${DB_USERNAME_VENTAS}
+            DB_PASSWORD_VENTAS=${DB_PASSWORD_VENTAS}
+            DB_ENDPOINT_DESPACHOS=${DB_ENDPOINT_DESPACHOS}
+            DB_PORT_DESPACHOS=${DB_PORT_DESPACHOS}
+            DB_NAME_DESPACHOS=${DB_NAME_DESPACHOS}
+            DB_USERNAME_DESPACHOS=${DB_USERNAME_DESPACHOS}
+            DB_PASSWORD_DESPACHOS=${DB_PASSWORD_DESPACHOS}
             DOCKERHUB_USERNAME=tomasvaldivia20
             ENVEOF
             
             # Sobrescribimos el .env con los valores reales de las envs de la sesión
-            sed -i "s/\${MYSQL_ROOT_PASSWORD}/$MYSQL_ROOT_PASSWORD/" .env
-            sed -i "s/\${DB_USERNAME}/$DB_USERNAME/" .env
-            sed -i "s/\${DB_PASSWORD}/$DB_PASSWORD/" .env
+            sed -i "s/\${DB_ENDPOINT_VENTAS}/$DB_ENDPOINT_VENTAS/" .env
+            sed -i "s/\${DB_PORT_VENTAS}/$DB_PORT_VENTAS/" .env
+            sed -i "s/\${DB_NAME_VENTAS}/$DB_NAME_VENTAS/" .env
+            sed -i "s/\${DB_USERNAME_VENTAS}/$DB_USERNAME_VENTAS/" .env
+            sed -i "s/\${DB_PASSWORD_VENTAS}/$DB_PASSWORD_VENTAS/" .env
+            sed -i "s/\${DB_ENDPOINT_DESPACHOS}/$DB_ENDPOINT_DESPACHOS/" .env
+            sed -i "s/\${DB_PORT_DESPACHOS}/$DB_PORT_DESPACHOS/" .env
+            sed -i "s/\${DB_NAME_DESPACHOS}/$DB_NAME_DESPACHOS/" .env
+            sed -i "s/\${DB_USERNAME_DESPACHOS}/$DB_USERNAME_DESPACHOS/" .env
+            sed -i "s/\${DB_PASSWORD_DESPACHOS}/$DB_PASSWORD_DESPACHOS/" .env
 
             echo "--- Pull de imágenes ---"
             docker pull tomasvaldivia20/backend-ventas:latest
