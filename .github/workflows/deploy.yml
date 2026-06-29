@@ -1,4 +1,4 @@
-name: CI/CD Backend — Innovatech Chile
+name: CI/CD Backend — Innovatech Chile (Fargate)
 
 on:
   push:
@@ -6,212 +6,115 @@ on:
       - deploy
 
 env:
-  IMAGE_VENTAS: tomasvaldivia20/backend-ventas
-  IMAGE_DESPACHOS: tomasvaldivia20/backend-despachos
+  AWS_REGION: us-east-1
+  ECR_REGISTRY: 162455266988.dkr.ecr.us-east-1.amazonaws.com
+  ECS_CLUSTER: innovatech-cluster
 
 jobs:
-  # ─────────────────────────────────────────────────────────────────────
-  # JOB 1A: Build y Push Servicio Ventas
-  # ─────────────────────────────────────────────────────────────────────
-  build-ventas:
-    name: Build & Push — Servicio Ventas
+  deploy-ventas:
+    name: Deploy — Servicio Ventas
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout código fuente
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Configurar Docker Buildx
+      - name: Setup Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Login a Docker Hub
-        uses: docker/login-action@v3
-        with:
-          username: tomasvaldivia20
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      - name: Build & Push Ventas (Docker Hub)
-        uses: docker/build-push-action@v5
-        with:
-          context: ./back-Ventas_SpringBoot/Springboot-API-REST
-          file: ./back-Ventas_SpringBoot/Springboot-API-REST/Dockerfile
-          push: true
-          tags: tomasvaldivia20/backend-ventas:latest
-          cache-from: type=gha,scope=ventas
-          cache-to: type=gha,mode=max,scope=ventas
-
-      - name: Configure AWS Credentials
+      - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_REGION }}
+          aws-region: ${{ env.AWS_REGION }}
 
       - name: Login to Amazon ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Build & Push Ventas (ECR)
+      - name: Build & Push to ECR
         uses: docker/build-push-action@v5
         with:
           context: ./back-Ventas_SpringBoot/Springboot-API-REST
           file: ./back-Ventas_SpringBoot/Springboot-API-REST/Dockerfile
           push: true
-          tags: ${{ secrets.ECR_REGISTRY }}/backend-ventas:latest
+          tags: |
+            ${{ env.ECR_REGISTRY }}/innovatech-backend-ventas:latest
+            ${{ env.ECR_REGISTRY }}/innovatech-backend-ventas:${{ github.sha }}
           cache-from: type=gha,scope=ventas
           cache-to: type=gha,mode=max,scope=ventas
 
-  # ─────────────────────────────────────────────────────────────────────
-  # JOB 1B: Build y Push Servicio Despachos
-  # ─────────────────────────────────────────────────────────────────────
-  build-despachos:
-    name: Build & Push — Servicio Despachos
+      - name: Render task definition
+        run: |
+          TASK_DEF_ARN=$(aws ecs describe-services \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --services innovatech-ventas-svc \
+            --query 'services[0].taskDefinition' \
+            --output text)
+          echo "Current task definition: $TASK_DEF_ARN"
+          TASK_DEF=$(aws ecs describe-task-definition \
+            --task-definition "$TASK_DEF_ARN" \
+            --query 'taskDefinition' --output json)
+          echo "$TASK_DEF" | jq 'del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .compatibilities, .registeredAt, .registeredBy, .deregisteredAt) | .containerDefinitions[0].image = "${{ env.ECR_REGISTRY }}/innovatech-backend-ventas:${{ github.sha }}"' > task-definition.json
+
+      - name: Deploy to ECS
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v2
+        with:
+          task-definition: task-definition.json
+          service: innovatech-ventas-svc
+          cluster: ${{ env.ECS_CLUSTER }}
+          wait-for-service-stability: true
+
+  deploy-despachos:
+    name: Deploy — Servicio Despachos
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout código fuente
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Configurar Docker Buildx
+      - name: Setup Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Login a Docker Hub
-        uses: docker/login-action@v3
-        with:
-          username: tomasvaldivia20
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      - name: Build & Push Despachos (Docker Hub)
-        uses: docker/build-push-action@v5
-        with:
-          context: ./back-Despachos_SpringBoot/Springboot-API-REST-DESPACHO
-          file: ./back-Despachos_SpringBoot/Springboot-API-REST-DESPACHO/Dockerfile
-          push: true
-          tags: tomasvaldivia20/backend-despachos:latest
-          cache-from: type=gha,scope=despachos
-          cache-to: type=gha,mode=max,scope=despachos
-
-      - name: Configure AWS Credentials
+      - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_REGION }}
+          aws-region: ${{ env.AWS_REGION }}
 
       - name: Login to Amazon ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Build & Push Despachos (ECR)
+      - name: Build & Push to ECR
         uses: docker/build-push-action@v5
         with:
           context: ./back-Despachos_SpringBoot/Springboot-API-REST-DESPACHO
           file: ./back-Despachos_SpringBoot/Springboot-API-REST-DESPACHO/Dockerfile
           push: true
-          tags: ${{ secrets.ECR_REGISTRY }}/backend-despachos:latest
+          tags: |
+            ${{ env.ECR_REGISTRY }}/innovatech-backend-despacho:latest
+            ${{ env.ECR_REGISTRY }}/innovatech-backend-despacho:${{ github.sha }}
           cache-from: type=gha,scope=despachos
           cache-to: type=gha,mode=max,scope=despachos
 
-  # ─────────────────────────────────────────────────────────────────────
-  # JOB 2: Deploy en EC2 Backend (SSH Proxy)
-  # ─────────────────────────────────────────────────────────────────────
-  deploy:
-    name: Deploy en EC2 Backend
-    runs-on: ubuntu-latest
-    needs: [build-ventas, build-despachos]
-    steps:
-      - name: Checkout (archivos de config)
-        uses: actions/checkout@v4
+      - name: Render task definition
+        run: |
+          TASK_DEF_ARN=$(aws ecs describe-services \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --services innovatech-despachos-svc \
+            --query 'services[0].taskDefinition' \
+            --output text)
+          echo "Current task definition: $TASK_DEF_ARN"
+          TASK_DEF=$(aws ecs describe-task-definition \
+            --task-definition "$TASK_DEF_ARN" \
+            --query 'taskDefinition' --output json)
+          echo "$TASK_DEF" | jq 'del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .compatibilities, .registeredAt, .registeredBy, .deregisteredAt) | .containerDefinitions[0].image = "${{ env.ECR_REGISTRY }}/innovatech-backend-despacho:${{ github.sha }}"' > task-definition.json
 
-      - name: Copiar archivos al EC2 (SCP)
-        uses: appleboy/scp-action@v0.1.7
+      - name: Deploy to ECS
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v2
         with:
-          host: ${{ secrets.EC2_BACKEND_HOST }}
-          username: ${{ secrets.EC2_USER }}
-          key: ${{ secrets.EC2_SSH_KEY }}
-          proxy_host: ${{ secrets.EC2_FRONTEND_HOST }}   
-          proxy_username: ${{ secrets.EC2_USER }}        
-          proxy_key: ${{ secrets.EC2_SSH_KEY }}         
-          source: "docker-compose.yml,init.sql,.env.example"
-          target: "/home/ubuntu/backend"
-          timeout: 60s
-
-      - name: Deploy en EC2 vía SSH
-        uses: appleboy/ssh-action@v1.0.3
-        env:
-          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
-          DB_ENDPOINT_VENTAS: ${{ secrets.DB_ENDPOINT_VENTAS }}
-          DB_PORT_VENTAS: ${{ secrets.DB_PORT_VENTAS }}
-          DB_NAME_VENTAS: ${{ secrets.DB_NAME_VENTAS }}
-          DB_USERNAME_VENTAS: ${{ secrets.DB_USERNAME_VENTAS }}
-          DB_PASSWORD_VENTAS: ${{ secrets.DB_PASSWORD_VENTAS }}
-          DB_ENDPOINT_DESPACHOS: ${{ secrets.DB_ENDPOINT_DESPACHOS }}
-          DB_PORT_DESPACHOS: ${{ secrets.DB_PORT_DESPACHOS }}
-          DB_NAME_DESPACHOS: ${{ secrets.DB_NAME_DESPACHOS }}
-          DB_USERNAME_DESPACHOS: ${{ secrets.DB_USERNAME_DESPACHOS }}
-          DB_PASSWORD_DESPACHOS: ${{ secrets.DB_PASSWORD_DESPACHOS }}
-          IMAGE_VENTAS: ${{ env.IMAGE_VENTAS }}
-          IMAGE_DESPACHOS: ${{ env.IMAGE_DESPACHOS }}
-        with:
-          host: ${{ secrets.EC2_BACKEND_HOST }}
-          username: ${{ secrets.EC2_USER }}
-          key: ${{ secrets.EC2_SSH_KEY }}
-          proxy_host: ${{ secrets.EC2_FRONTEND_HOST }}
-          proxy_username: ${{ secrets.EC2_USER }}
-          proxy_key: ${{ secrets.EC2_SSH_KEY }}
-          timeout: 120s
-          envs: DOCKERHUB_TOKEN,DB_ENDPOINT_VENTAS,DB_PORT_VENTAS,DB_NAME_VENTAS,DB_USERNAME_VENTAS,DB_PASSWORD_VENTAS,DB_ENDPOINT_DESPACHOS,DB_PORT_DESPACHOS,DB_NAME_DESPACHOS,DB_USERNAME_DESPACHOS,DB_PASSWORD_DESPACHOS,IMAGE_VENTAS,IMAGE_DESPACHOS
-          script: |
-            set -e
-            
-            echo "--- Limpieza preventiva ---"
-            # Eliminamos el .env antiguo para que no herede errores de formato
-            sudo rm -f /home/ubuntu/backend/.env
-            
-            echo "--- Preparando directorio ---"
-            sudo mkdir -p /home/ubuntu/backend
-            sudo chown -R ubuntu:ubuntu /home/ubuntu/backend
-            cd /home/ubuntu/backend
-
-            echo "--- Login Docker Hub ---"
-            # Usamos una variable temporal para el login para evitar conflictos de símbolos
-            export DOCKER_PASS="${DOCKERHUB_TOKEN}"
-            echo "$DOCKER_PASS" | docker login -u tomasvaldivia20 --password-stdin
-
-            echo "--- Generando archivo .env limpio ---"
-            # Usamos comillas simples en el EOF para que Bash no intente interpretar nada dentro
-            cat > .env << 'ENVEOF'
-            DB_ENDPOINT_VENTAS=${DB_ENDPOINT_VENTAS}
-            DB_PORT_VENTAS=${DB_PORT_VENTAS}
-            DB_NAME_VENTAS=${DB_NAME_VENTAS}
-            DB_USERNAME_VENTAS=${DB_USERNAME_VENTAS}
-            DB_PASSWORD_VENTAS=${DB_PASSWORD_VENTAS}
-            DB_ENDPOINT_DESPACHOS=${DB_ENDPOINT_DESPACHOS}
-            DB_PORT_DESPACHOS=${DB_PORT_DESPACHOS}
-            DB_NAME_DESPACHOS=${DB_NAME_DESPACHOS}
-            DB_USERNAME_DESPACHOS=${DB_USERNAME_DESPACHOS}
-            DB_PASSWORD_DESPACHOS=${DB_PASSWORD_DESPACHOS}
-            DOCKERHUB_USERNAME=tomasvaldivia20
-            ENVEOF
-            
-            # Sobrescribimos el .env con los valores reales de las envs de la sesión
-            sed -i "s/\${DB_ENDPOINT_VENTAS}/$DB_ENDPOINT_VENTAS/" .env
-            sed -i "s/\${DB_PORT_VENTAS}/$DB_PORT_VENTAS/" .env
-            sed -i "s/\${DB_NAME_VENTAS}/$DB_NAME_VENTAS/" .env
-            sed -i "s/\${DB_USERNAME_VENTAS}/$DB_USERNAME_VENTAS/" .env
-            sed -i "s/\${DB_PASSWORD_VENTAS}/$DB_PASSWORD_VENTAS/" .env
-            sed -i "s/\${DB_ENDPOINT_DESPACHOS}/$DB_ENDPOINT_DESPACHOS/" .env
-            sed -i "s/\${DB_PORT_DESPACHOS}/$DB_PORT_DESPACHOS/" .env
-            sed -i "s/\${DB_NAME_DESPACHOS}/$DB_NAME_DESPACHOS/" .env
-            sed -i "s/\${DB_USERNAME_DESPACHOS}/$DB_USERNAME_DESPACHOS/" .env
-            sed -i "s/\${DB_PASSWORD_DESPACHOS}/$DB_PASSWORD_DESPACHOS/" .env
-
-            echo "--- Pull de imágenes ---"
-            docker pull tomasvaldivia20/backend-ventas:latest
-            docker pull tomasvaldivia20/backend-despachos:latest
-
-            echo "--- Levantando servicios ---"
-            # Forzamos a Docker Compose a ignorar errores de interpolación del sistema
-            # y usamos el archivo .env que acabamos de crear
-            docker-compose --env-file .env up -d --no-deps ventas despachos
-
-            docker image prune -f
-            echo "--- ¡Despliegue completado! ---"
+          task-definition: task-definition.json
+          service: innovatech-despachos-svc
+          cluster: ${{ env.ECS_CLUSTER }}
+          wait-for-service-stability: true

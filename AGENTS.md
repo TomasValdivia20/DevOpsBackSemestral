@@ -22,13 +22,15 @@ docker compose up -d --build
 
 **Pipeline**: `.github/workflows/deploy.yml`
 **Trigger**: push a la rama `deploy` únicamente
-**Flujo**:
-1. Build + push a Docker Hub (`tomasvaldivia20/backend-ventas`, `tomasvaldivia20/backend-despachos`)
-2. SCP de `docker-compose.yml`, `init.sql`, `.env.example` al EC2
-3. SSH a EC2 (vía bastion/frontend) → genera `.env` desde GitHub Secrets → `docker pull` + `docker-compose up -d`
+**Infraestructura**: ECS Fargate (no EC2)
+**Flujo** (jobs paralelos por servicio):
+1. Build con Docker Buildx → push a **Amazon ECR** (`innovatech-backend-ventas`, `innovatech-backend-despacho`)
+2. Descargar task definition actual desde ECS vía `describe-services` → `describe-task-definition`
+3. Render: actualizar imagen + limpiar metadatos computados
+4. Registrar nueva revisión de task definition + `update-service --force-new-deployment`
 
 **Secrets requeridos en GitHub**:
-`DOCKERHUB_TOKEN`, `EC2_BACKEND_HOST`, `EC2_FRONTEND_HOST`, `EC2_USER`, `EC2_SSH_KEY`, y los 10 de RDS (ver `.env.example`).
+`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, y los 10 de RDS (ver `.env.example`).
 
 ## Arquitectura
 
