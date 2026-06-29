@@ -32,6 +32,8 @@ Para conectar correctamente la base de datos (especialmente si usas versiones re
 spring.datasource.url=jdbc:mysql://[TU_HOST_O_IP]:3306/[TU_BASE_DATOS]?sslMode=DISABLED&allowPublicKeyRetrieval=true
 spring.datasource.username=[TU_USUARIO]
 spring.datasource.password=[TU_CONTRASENA]
+
+
 3. Compilar y Ejecutar
 Para compilar el proyecto y descargar las dependencias, ejecuta en la raíz de cada microservicio:
 
